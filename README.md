@@ -10,8 +10,8 @@ Node.js installed on your machine.
 
 # Clone this repository:
 
-git clone https://github.com/your-username/aws-vpc-pulumi.git
-cd aws-vpc-pulumi
+git clone git@github.com:ShubhiMiradwal-CSYE-6225-Cloud/iac-pulumi.git
+cd iac-pulumi
 
 
 # install dependencies:
