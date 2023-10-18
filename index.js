@@ -1,9 +1,7 @@
 "use strict";
 const pulumi = require("@pulumi/pulumi");
 const aws = require("@pulumi/aws");
-
 const config = new pulumi.Config();
-
 const vpcCidrBlockk = config.require("vpcCidrBlock");
 const publicSubnetCidrBase = config.require("publicSubnetCidrBase");
 const privateSubnetCidrBase = config.require("privateSubnetCidrBase");
@@ -51,7 +49,7 @@ privateRouteTable = new aws.ec2.RouteTable("private-rt", {
         Name: "private-rt",
     },
 });
- 
+
 const findAvailabilityZone = async (AWS_REGION) => {
     const az = await aws.getAvailabilityZones({ state: "available" });
     return az.names;
@@ -61,7 +59,7 @@ async function numberofaz() {
     const azNames = await findAvailabilityZone(AWS_REGION);
     console.log(azNames)
     return azNames.length;
-  }
+}
 
   (async () => {
     const numberofAZ = await numberofaz(); 
@@ -107,7 +105,74 @@ for (let i = 0; i < Math.min(3,numberofAZ); i++) {
 }
 })();
 
+const securityGroup = new aws.ec2.SecurityGroup("application security group", {
+    ingress: [
+        {
+            cidrBlocks: ["0.0.0.0/0"],
+            protocol: "tcp",
+            fromPort: 22,
+            toPort: 22,
+        },
+        {
+            cidrBlocks: ["0.0.0.0/0"],
+            protocol: "tcp",
+            fromPort: 80,
+            toPort: 80,
+        },
+        {
+            cidrBlocks: ["0.0.0.0/0"],
+            protocol: "tcp",
+            fromPort: 443,
+            toPort: 443,
+        },
+        {
+            cidrBlocks: ["0.0.0.0/0"],
+            protocol: "tcp",
+            fromPort: 8080,
+            toPort: 8080,   
+        },
+    ],
+    egress: [
+        {
+            cidrBlocks: ["0.0.0.0/0"],
+            fromPort: 0,
+            toPort: 0,
+            protocol: "-1",
+        },
+    ],
+});
+
+
+const ami = pulumi.output(aws.ec2.getAmi({
+    owners: ["240210896617"],
+    mostRecent: true,
+    filters: [
+        {
+            name: "name",
+            values: ["webapp-20231018214002"],
+        },
+    ],
+}));
+
+const instance = new aws.ec2.Instance("instance", {
+    vpcId: vpc.id,
+    ami: ami.id,
+    instanceType: "t3.nano",
+    vpcSecurityGroupIds: [
+        securityGroup.id,
+    ],
+    keyName: "aws5",
+    blockDeviceMappings: [
+        {
+            deviceName: "/dev/sda1",
+            ebs: {
+                volumeSize: 25, 
+                volumeType: "gp2", 
+                deleteOnTermination: true,
+            },
+        },
+    ],
+});
 exports.vpcId = vpc.id;
 }
-
 const vpcId = createResource();
