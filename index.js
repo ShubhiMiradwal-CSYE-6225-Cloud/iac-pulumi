@@ -144,11 +144,10 @@ const securityGroup = new aws.ec2.SecurityGroup("application security group", {
 });
 
 
-
-
 const instance = new aws.ec2.Instance("instance", {
     vpcId: vpc.id,
-    ami: ami_id,
+    ami: ami.id,
+
     instanceType: "t3.nano",
     vpcSecurityGroupIds: [
         securityGroup.id,
