@@ -8,6 +8,7 @@ const privateSubnetCidrBase = config.require("privateSubnetCidrBase");
 const subnetCidrOffset = config.require("subnetCidrOffset");
 const destinationCidrBlock = config.require("destinationCidrBlock");
 const AWS_REGION = config.require("AWS_REGION");
+const ami_id= config.require("ami_id");
 
 
 const createResource= async()=>
@@ -143,20 +144,11 @@ const securityGroup = new aws.ec2.SecurityGroup("application security group", {
 });
 
 
-const ami = pulumi.output(aws.ec2.getAmi({
-    owners: ["240210896617"],
-    mostRecent: true,
-    filters: [
-        {
-            name: "name",
-            values: ["webapp-20231018214002"],
-        },
-    ],
-}));
+
 
 const instance = new aws.ec2.Instance("instance", {
     vpcId: vpc.id,
-    ami: ami.id,
+    ami: ami_id,
     instanceType: "t3.nano",
     vpcSecurityGroupIds: [
         securityGroup.id,
