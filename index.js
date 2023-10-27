@@ -288,6 +288,7 @@ async function createEC2Instance(amiId, subnetId, securityGroupId,userDataScript
         },
         userData: userDataScript,
         userDataReplaceOnChange: true,
+
     });
     return instance;
 }
