@@ -246,16 +246,9 @@ async function createVPC() {
                 echo "NODE_PORT=8080" >> .env
                 echo "DB_HOSTNAME=${hostname}" >> .env
                 echo "DB_PASSWORD=${password}" >> .env
+                echo "IS_SSL=true" >> .env
                 echo "NODE_ENV=test" >> .env
                # npx sequelize db:migrate
-                # cd systemed/system/
-                sudo chown -R user:group /opt/user/webapp
-                sudo chmod -R 750  /opt/user/webapp
-                sudo systemctl daemon-reload
-                sudo systemctl start webapp.service
-                sudo systemctl enable webapp.service
-                
-                # sudo systemctl restart webapp.service
                 `
             );
         }
@@ -283,7 +276,7 @@ async function createRDSInstance(para_grp, subnetgrp, securityGroupdb) {
 
 async function createEC2Instance(amiId, subnetId, securityGroupId,userDataScript) {
     const instance = new aws.ec2.Instance("myInstance", {
-        instanceType: "t3.nano",
+        instanceType: "t3.micro",
         ami: amiId,
         subnetId: subnetId,
         keyName: "aws5",
@@ -294,6 +287,7 @@ async function createEC2Instance(amiId, subnetId, securityGroupId,userDataScript
             deleteOnTermination: true,
         },
         userData: userDataScript,
+        userDataReplaceOnChange: true,
     });
     return instance;
 }

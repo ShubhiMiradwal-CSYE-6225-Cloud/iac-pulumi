@@ -7,4 +7,4 @@ config:
   privateSubnetCidrBase: "10.0."
   destinationCidrBlock: "0.0.0.0/0"
   subnetCidrOffset: 3
-  ami_id: ami-08716f1e0bdfbc178
+  ami_id: ami-0acef3b1fd1f2da06
