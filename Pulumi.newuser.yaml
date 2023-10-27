@@ -1,0 +1,10 @@
+encryptionsalt: v1:bFEfh/kslMQ=:v1:HhT2KauXEjfMN2pF:U6IHhHzheAJRUnnjxFFoGiHcb9fWcw==
+config:
+  aws:profile: dev
+  AWS_REGION: us-west-2
+  vpcCidrBlock: "10.0.0.0/16"
+  publicSubnetCidrBase: "10.0."
+  privateSubnetCidrBase: "10.0."
+  destinationCidrBlock: "0.0.0.0/0"
+  subnetCidrOffset: 3
+  ami_id: ami-08716f1e0bdfbc178
