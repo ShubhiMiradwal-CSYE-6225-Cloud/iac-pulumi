@@ -9,6 +9,7 @@ const subnetCidrOffset = config.require("subnetCidrOffset");
 const destinationCidrBlock = config.require("destinationCidrBlock");
 const AWS_REGION = config.require("AWS_REGION");
 const ami_id= config.require("ami_id");
+const domainname=config.require("domain");
 
 
 async function createVPC() {
@@ -206,33 +207,6 @@ async function createVPC() {
             });
         }
 
-        // async function createUserDataScript(username,dbName,port,address,password) {
-        //     // let [username, dbName, port, endpoint, password] = args;
-        //     return `#!/bin/bash
-            
-        //     cd /home/admin/webapp
-        //     touch .env
-        
-        //     # Set environment variables in the .env file
-        //     echo "DB_USER=${username}" >> .env
-        //     echo "DB_NAME=${dbName}" >> .env
-        //     echo "DB_PORT=${port}" >> .env
-        //     echo "NODE_PORT=8080" >> .env
-        //     echo "DB_HOSTNAME=${address}" >> .env
-        //     echo "DB_PASSWORD=${password}" >> .env
-        //     echo "NODE_ENV=test" >> .env
-        //     npx sequelize migrate
-        //     cd /home/../etc/systemed/system/
-        //     sudo sed -i 's|^Environment=.*$|EnvironmentFile=/home/admin/webapp/.env|' webapp.service
-        //     sudo systemctl daemon-reload
-        //     "sudo systemctl enable webapp.service",
-        //     "sudo systemctl start webapp.service",
-        //     sudo systemctl restart webapp.service
-        //     `;
-        // }
-
-
-
         async function createUserDataScript(username, dbName, port, hostname, password) {
             return pulumi.all([username, dbName, port, hostname, password]).apply(([username, dbName, port, hostname, password]) =>
                 `#!/bin/bash          
@@ -249,6 +223,13 @@ async function createVPC() {
                 echo "IS_SSL=true" >> .env
                 echo "NODE_ENV=test" >> .env
                # npx sequelize db:migrate
+               sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+               -a fetch-config \
+               -m ec2 \
+               -c file:/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent.json \
+               -s
+                sudo cp /home/admin/webapp/packer/amazon-cloudwatch-agent.json /opt/aws/amazon-cloudwatch-agent/etc/amazon-cloudwatch-agent.json
+                sudo systemctl daemon-reload
                 `
             );
         }
@@ -274,13 +255,14 @@ async function createRDSInstance(para_grp, subnetgrp, securityGroupdb) {
 
 
 
-async function createEC2Instance(amiId, subnetId, securityGroupId,userDataScript) {
+async function createEC2Instance(amiId, subnetId, securityGroupId,iamInstanceProfile,userDataScript) {
     const instance = new aws.ec2.Instance("myInstance", {
         instanceType: "t3.micro",
         ami: amiId,
         subnetId: subnetId,
-        keyName: "aws5",
+        keyName: "admin-aws",
         securityGroups: [securityGroupId],
+        iamInstanceProfile: iamInstanceProfile,
         rootBlockDevice: {
             volumeSize: 25,
             volumeType: "gp2",
@@ -288,10 +270,86 @@ async function createEC2Instance(amiId, subnetId, securityGroupId,userDataScript
         },
         userData: userDataScript,
         userDataReplaceOnChange: true,
+
     });
     return instance;
 }
-        
+
+async function createARecord(zoneId, instance) {
+    return new aws.route53.Record("web-a-record", {
+        name : domainname,
+        zoneId : zoneId,
+        type : "A",
+        ttl : "300",
+        records : [instance.publicIp], 
+    });
+}
+
+async function getHostedZone() {
+    const zones = await aws.route53.getZone({name: domainname}); 
+    return zones;
+}
+
+async function createIamRoleWithPolicy(roleName, policyName) {
+    const policyDocument = JSON.stringify({
+        Version: "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "cloudwatch:PutMetricData",
+                    "ec2:DescribeVolumes",
+                    "ec2:DescribeTags",
+                    "logs:PutLogEvents",
+                    "logs:DescribeLogStreams",
+                    "logs:DescribeLogGroups",
+                    "logs:CreateLogStream",
+                    "logs:CreateLogGroup"
+                ],
+                "Effect": "Allow",
+                "Resource": "*"
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ssm:GetParameter"
+                ],
+                "Resource": "arn:aws:ssm:*:*:parameter/AmazonCloudWatch-*"
+            }
+        ],
+    });
+
+    const policy = new aws.iam.Policy(policyName, {
+        policy: policyDocument,
+    });
+
+    const role = new aws.iam.Role(roleName, {
+        assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Action: "sts:AssumeRole",
+                    Principal: {
+                        Service: "ec2.amazonaws.com",
+                    },
+                    Effect: "Allow",
+                    Sid: "",
+                },
+            ],
+        }),
+    });
+
+    const rolePolicyAttachment = new aws.iam.RolePolicyAttachment(`${roleName}-${policyName}`, {
+        role: role.name,
+        policyArn: policy.arn,
+    });
+
+    const instanceProfile = new aws.iam.InstanceProfile(`${roleName}-profile`, {
+        role: role.name
+    });
+
+    return {arn: role.arn, instanceProfileName: instanceProfile.name};
+}
+
 
 const createResource= async()=>
 {
@@ -310,10 +368,13 @@ const createResource= async()=>
     const parameterGroup = await createParameterGroup();
     const rdsinstance= await createRDSInstance(parameterGroup,privateSubnetgroup, dbSecurityGroup);
     const userDataScript1 = await createUserDataScript(rdsinstance.username,rdsinstance.dbName,rdsinstance.port,rdsinstance.address,rdsinstance.password);
-    const instance = await createEC2Instance(ami_id, publicSubnet[0],securityGroup.id,userDataScript1);
-    
+    const {arn, instanceProfileName} = await createIamRoleWithPolicy("webapp-role", "webapp-policy");
+    const instance = await createEC2Instance(ami_id, publicSubnet[0], securityGroup.id, instanceProfileName, userDataScript1); 
+    const zoneId = await getHostedZone();
+    const dnsRecord = await createARecord(zoneId.id, instance);
 }
 
 createResource();
         
+
   

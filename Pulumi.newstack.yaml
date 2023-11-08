@@ -1,11 +1,11 @@
 encryptionsalt: v1:vKthbNAfl1k=:v1:luOth2+rMaLKC7Ci:ymSslKdhjxpiRh9OlSbzbakum7ereg==
 config:
-  aws:profile: dev
+  aws:profile: demo
   AWS_REGION: us-west-2
   vpcCidrBlock: "10.0.0.0/16"
   publicSubnetCidrBase: "10.0."
   privateSubnetCidrBase: "10.0."
   destinationCidrBlock: "0.0.0.0/0"
   subnetCidrOffset: 3
-  ami_id: ami-08731c7fcf840f126
-  
+  ami_id: ami-0a3a95942b45aa083
+  domain: "demo.shubhimiradwal.me"
