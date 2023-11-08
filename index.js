@@ -62,7 +62,6 @@ async function createVPC() {
     return privateRouteTable;
   }
 
-
     async function createPublicSubnet(vpcId) {
         const availableZones = await aws.getAvailabilityZones();
         const numberofAZ = availableZones.names.length;
@@ -254,7 +253,6 @@ async function createRDSInstance(para_grp, subnetgrp, securityGroupdb) {
 }
 
 
-
 async function createEC2Instance(amiId, subnetId, securityGroupId,iamInstanceProfile,userDataScript) {
     const instance = new aws.ec2.Instance("myInstance", {
         instanceType: "t3.micro",
@@ -376,5 +374,3 @@ const createResource= async()=>
 
 createResource();
         
-
-  
