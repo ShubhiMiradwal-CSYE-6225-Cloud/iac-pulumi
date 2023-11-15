@@ -7,5 +7,5 @@ config:
   privateSubnetCidrBase: "10.0."
   destinationCidrBlock: "0.0.0.0/0"
   subnetCidrOffset: 3
-  ami_id: ami-0a3a95942b45aa083
+  ami_id: ami-04a0954421ab6a239
   domain: "demo.shubhimiradwal.me"
