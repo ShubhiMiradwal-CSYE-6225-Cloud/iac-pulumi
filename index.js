@@ -11,7 +11,6 @@ const AWS_REGION = config.require("AWS_REGION");
 const ami_id= config.require("ami_id");
 const domainname=config.require("domain");
 
-
 async function createVPC() {
     const vpc = await new aws.ec2.Vpc("main", {
       cidrBlock: vpcCidrBlockk,
@@ -23,7 +22,6 @@ async function createVPC() {
     });
     return vpc;
   }
-
 
   async function createInternetGateway(vpcId) {
     const internetGateway = await new aws.ec2.InternetGateway("gw", {
@@ -61,6 +59,8 @@ async function createVPC() {
     });
     return privateRouteTable;
   }
+
+
 
     async function createPublicSubnet(vpcId) {
         const availableZones = await aws.getAvailabilityZones();
@@ -137,30 +137,19 @@ async function createVPC() {
         }
 
 
-        async function createSecurityGroupInVpc(vpcId) {
+        async function createSecurityGroupInVpc(vpcId, elbSecurityGroup) {
             return new aws.ec2.SecurityGroup("application security group", {
                 vpcId: vpcId,
                 ingress: [
                     {
-                        cidrBlocks: ["0.0.0.0/0"],
+                        securityGroups: [elbSecurityGroup],
                         protocol: "tcp",
                         fromPort: 22,
                         toPort: 22,
                     },
+
                     {
-                        cidrBlocks: ["0.0.0.0/0"],
-                        protocol: "tcp",
-                        fromPort: 80,
-                        toPort: 80,
-                    },
-                    {
-                        cidrBlocks: ["0.0.0.0/0"],
-                        protocol: "tcp",
-                        fromPort: 443,
-                        toPort: 443,
-                    },
-                    {
-                        cidrBlocks: ["0.0.0.0/0"],
+                        securityGroups: [elbSecurityGroup],
                         protocol: "tcp",
                         fromPort: 8080,
                         toPort: 8080,
@@ -188,8 +177,15 @@ async function createVPC() {
                         securityGroups: [securityGroup.id],
                     },
                 ],
-            });
+                egress: [
+                    {
+                        protocol: "-1",
+                        fromPort: 0,
+                        toPort: 0,
+                        cidrBlocks: ["0.0.0.0/0"],
+            }],
         }
+    )};
         async function createParameterGroup() {
             return new aws.rds.ParameterGroup("shubhipar", {
                 family: "postgres15",
@@ -206,7 +202,7 @@ async function createVPC() {
             });
         }
 
-        async function createUserDataScript(username, dbName, port, hostname, password) {
+    async function createUserDataScript(username, dbName, port, hostname, password) {
             return pulumi.all([username, dbName, port, hostname, password]).apply(([username, dbName, port, hostname, password]) =>
                 `#!/bin/bash          
         
@@ -248,40 +244,199 @@ async function createRDSInstance(para_grp, subnetgrp, securityGroupdb) {
         publiclyAccessible: false,
         parameterGroupName: para_grp.name,
         vpcSecurityGroupIds: [securityGroupdb.id],
-
+        deletion_protection: false,
+        skipFinalSnapshot:true,
     });
 }
 
+async function createlbSecurityGroup(vpcId,elbSecurityGroup) {
+    return new aws.ec2.SecurityGroup("load Balancer", {
+        vpcId: vpcId,
+        description: "Allow TCP in for load balancer",
+        egress: [
+            {
+                protocol: "-1",
+                fromPort: 0,
+                toPort: 0,
+                cidrBlocks: ["0.0.0.0/0"],
+            },
+        ],
+        ingress: [
+            {
+                protocol: "tcp",
+                fromPort: 80,
+                toPort: 80,
+                cidrBlocks: ["0.0.0.0/0"],
+            },
+            {
+                protocol: "tcp",
+                fromPort: 443,
+                toPort: 443,
+                cidrBlocks: ["0.0.0.0/0"],
+            },
+        ],
 
-async function createEC2Instance(amiId, subnetId, securityGroupId,iamInstanceProfile,userDataScript) {
-    const instance = new aws.ec2.Instance("myInstance", {
-        instanceType: "t3.micro",
-        ami: amiId,
-        subnetId: subnetId,
+
+   
+async function createLaunchTemplate(imageId, userDataScript, publicSubnetId, iamRole, securityGroupId) {
+    const userData = pulumi.interpolate`${userDataScript}`.apply(data => Buffer.from(data).toString('base64'));
+    const subnetId = Array.isArray(publicSubnetId) ? publicSubnetId[0] : publicSubnetId;
+    return new aws.ec2.LaunchTemplate("asg-launch-template", {
+        imageId: imageId,
+        instanceType: "t2.micro",
         keyName: "admin-aws",
-        securityGroups: [securityGroupId],
-        iamInstanceProfile: iamInstanceProfile,
-        rootBlockDevice: {
-            volumeSize: 25,
-            volumeType: "gp2",
-            deleteOnTermination: true,
+        associatePublicIpAddress: true,
+        userData: userData,
+        blockDeviceMappings: [
+            {
+                deviceName: '/dev/xvda',
+                ebs: {
+                    volumeSize: 8,
+                },
+            },
+        ],
+        iamInstanceProfile: {
+            name: iamRole,
         },
-        userData: userDataScript,
-        userDataReplaceOnChange: true,
+        monitoring: {
+            enabled: true,
+        },
+        networkInterfaces: [
+            {
+                securityGroups: [securityGroupId],
+                associatePublicIpAddress: true,
+                deleteOnTermination: true,
+                deviceIndex: 0,
+                subnetId: subnetId,
+            },
+        ],
 
     });
-    return instance;
 }
 
-async function createARecord(zoneId, instance) {
+async function createAutoScalingGroup(launchTemplateId, publicSubnet, targetgroup) {
+    return new aws.autoscaling.Group("webserver-asg", {
+        vpcZoneIdentifiers: publicSubnet,
+        desiredCapacity: 1,
+        minSize: 1,
+        maxSize: 3,
+        cooldown: 60,
+        launchTemplate: {
+            id: launchTemplateId,
+            version: "$Latest",
+        },
+        dependsOn: [targetgroup],
+        targetGroupArns: [targetgroup.arn],
+
+    });
+}
+async function createTargetGroup(vpcID) {
+    return new aws.lb.TargetGroup("webserver-target-group", {
+        vpcId:vpcID,
+        targetType: "instance",
+        protocol: "HTTP",
+        port: 8080,
+        healthCheck: {
+            interval: 30,
+            path: "/healthz",
+            timeout: 15,
+            healthyThreshold: 3,
+            unhealthyThreshold: 3,
+            matcher: "200",
+        },
+
+    });
+}
+async function createListener(alb, targetGroup) {
+    return new aws.lb.Listener("webserver-listener", {
+        loadBalancerArn: alb.arn, 
+        port              : 80,
+        protocol          : "HTTP",
+        defaultActions: [{
+            type: "forward",
+            targetGroupArn: targetGroup.arn,
+        }],
+    });
+}
+
+
+const createLoadBalancer = async (publicSubnets, loadBalancerSg) => {
+    const alb = new aws.lb.LoadBalancer("myLoadBalancer", {
+        subnets: publicSubnets,
+        securityGroups: [loadBalancerSg.id],
+        loadBalancerType : "application",
+
+    });
+    return alb;
+};
+
+async function createARecord(zoneId,alb) {
     return new aws.route53.Record("web-a-record", {
-        name : domainname,
-        zoneId : zoneId,
-        type : "A",
-        ttl : "300",
-        records : [instance.publicIp], 
+        name: domainname,
+        type: "A",
+        zoneId: zoneId,
+        aliases: [{
+            name: alb.dnsName,
+            zoneId: alb.zoneId,
+            evaluateTargetHealth: true
+        }]
     });
 }
+
+async function createScaleUpPolicy(asgName) {
+    return new aws.autoscaling.Policy("scaleup", {
+        adjustmentType: "ChangeInCapacity",
+        cooldown: 300,
+        scalingAdjustment: 1,
+        policyType: "SimpleScaling",
+        autoscalingGroupName: asgName,
+    });
+}
+
+async function createScaleDownPolicy(asgName) {
+    return new aws.autoscaling.Policy("scaledown", {
+        
+        adjustmentType: "ChangeInCapacity",
+        cooldown: 300,
+        scalingAdjustment: -1,
+        policyType: "SimpleScaling",
+        autoscalingGroupName: asgName,
+    });
+}
+
+async function createLowCPUMetricAlarm(asg, scaleDownPolicyArn) {
+    return new aws.cloudwatch.MetricAlarm('cpuLow', {
+        comparisonOperator: 'LessThanThreshold',
+        evaluationPeriods: 1,
+        metricName: 'CPUUtilization',
+        namespace: 'AWS/EC2',
+        period: 60,
+        statistic: 'Average',
+        threshold: 3,
+        alarmActions: [scaleDownPolicyArn],
+        dimensions: {
+            AutoScalingGroupName: asg.name,
+        },
+    });
+}
+
+async function createHighCPUMetricAlarm(asg, scaleUpPolicyArn) {
+    return new aws.cloudwatch.MetricAlarm("cpuHigh", {
+        comparisonOperator: "GreaterThanThreshold",
+        evaluationPeriods: 1,
+        metricName: "CPUUtilization",
+        namespace: "AWS/EC2",
+        period: 60,
+        statistic: "Average",
+        threshold: 5,
+        alarmActions: [scaleUpPolicyArn],
+        dimensions: {
+            AutoScalingGroupName: asg.name,
+        },
+    });
+}
+
+
 
 async function getHostedZone() {
     const zones = await aws.route53.getZone({name: domainname}); 
@@ -305,7 +460,7 @@ async function createIamRoleWithPolicy(roleName, policyName) {
                 ],
                 "Effect": "Allow",
                 "Resource": "*"
-            },
+            }, 
             {
                 "Effect": "Allow",
                 "Action": [
@@ -359,18 +514,29 @@ const createResource= async()=>
     const publicSubnet = await createPublicSubnet(vpc.id);
     const publicRouteTableAssociation = await createpublicroutetableassocation(publicSubnet,publicRouteTable);
     const privateRouteTableAssociation = await createprivateroutetableassociation(privateSubnet,privateRouteTable);
-    const securityGroup = await createSecurityGroupInVpc(vpc.id);   
     const createpublicroutetable= await createPublicRoute(vpc.id, publicRouteTable.id, destinationCidrBlock, internetGateway.id)
+    const loadBalancerSg= await createlbSecurityGroup(vpc.id);
+    const securityGroup = await createSecurityGroupInVpc(vpc.id, loadBalancerSg.id); 
     const dbSecurityGroup = await createDbSecurityGroup(vpc.id, securityGroup);
     const privateSubnetgroup = await createsubnetgroup(privateSubnet);
     const parameterGroup = await createParameterGroup();
     const rdsinstance= await createRDSInstance(parameterGroup,privateSubnetgroup, dbSecurityGroup);
     const userDataScript1 = await createUserDataScript(rdsinstance.username,rdsinstance.dbName,rdsinstance.port,rdsinstance.address,rdsinstance.password);
     const {arn, instanceProfileName} = await createIamRoleWithPolicy("webapp-role", "webapp-policy");
-    const instance = await createEC2Instance(ami_id, publicSubnet[0], securityGroup.id, instanceProfileName, userDataScript1); 
-    const zoneId = await getHostedZone();
-    const dnsRecord = await createARecord(zoneId.id, instance);
+    const launchTemplate = await createLaunchTemplate(ami_id, userDataScript1, publicSubnet, instanceProfileName,securityGroup);
+    const targetGroup = await createTargetGroup(vpc.id);
+    const asg = await createAutoScalingGroup(launchTemplate.id,publicSubnet,targetGroup);
+    const scaleUpPolicy = await createScaleUpPolicy(asg.name);
+    const metricup= await createHighCPUMetricAlarm(asg, scaleUpPolicy.arn);
+    const scaleDownPolicy = await createScaleDownPolicy(asg.name);
+    const metricdown= await createLowCPUMetricAlarm(asg, scaleDownPolicy.arn);
+    const alb=await createLoadBalancer(publicSubnet, loadBalancerSg);
+    const listener = await createListener(alb, targetGroup);
+    const hostedZoneid = await getHostedZone();
+    const aliass = await createARecord(hostedZoneid.zoneId,alb);
 }
 
 createResource();
         
+
+ 
