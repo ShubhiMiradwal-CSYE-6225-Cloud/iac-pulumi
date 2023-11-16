@@ -10,8 +10,6 @@ const destinationCidrBlock = config.require("destinationCidrBlock");
 const AWS_REGION = config.require("AWS_REGION");
 const ami_id= config.require("ami_id");
 const domainname=config.require("domain");
-const awsx = require("@pulumi/awsx");
-var certificate_arn = "arn:aws:acm:us-west-2:123456789012:certificate/abcd1234-a123-456a-a12b-a123b4cd56ef";
 
 async function createVPC() {
     const vpc = await new aws.ec2.Vpc("main", {
@@ -24,7 +22,6 @@ async function createVPC() {
     });
     return vpc;
   }
-
 
   async function createInternetGateway(vpcId) {
     const internetGateway = await new aws.ec2.InternetGateway("gw", {
@@ -62,6 +59,7 @@ async function createVPC() {
     });
     return privateRouteTable;
   }
+
 
 
     async function createPublicSubnet(vpcId) {
@@ -278,9 +276,7 @@ async function createlbSecurityGroup(vpcId,elbSecurityGroup) {
             },
         ],
 
-    
-    });
-}
+
    
 async function createLaunchTemplate(imageId, userDataScript, publicSubnetId, iamRole, securityGroupId) {
     const userData = pulumi.interpolate`${userDataScript}`.apply(data => Buffer.from(data).toString('base64'));
@@ -543,4 +539,4 @@ const createResource= async()=>
 createResource();
         
 
-  
+ 
