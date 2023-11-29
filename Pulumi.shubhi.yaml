@@ -1,0 +1,16 @@
+encryptionsalt: v1:vKthbNAfl1k=:v1:luOth2+rMaLKC7Ci:ymSslKdhjxpiRh9OlSbzbakum7ereg==
+config:
+  aws:profile: demo
+  gcp:project: csye-6225-demo
+  iac-pulumii:AWS_REGION: us-west-2
+  iac-pulumii:ami_id: ami-0eb5b5038696f6a39
+  iac-pulumii:destinationCidrBlock: 0.0.0.0/0
+  iac-pulumii:domain: demo.shubhimiradwal.me
+  iac-pulumii:privateSubnetCidrBase: 10.0.
+  iac-pulumii:publicSubnetCidrBase: 10.0.
+  iac-pulumii:subnetCidrOffset: "3"
+  iac-pulumii:vpcCidrBlock: 10.0.0.0/16
+  iac-pulumii:maindomain : "shubhimiradwal.me"
+
+
+  
