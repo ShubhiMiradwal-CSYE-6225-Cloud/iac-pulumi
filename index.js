@@ -10,6 +10,10 @@ const destinationCidrBlock = config.require("destinationCidrBlock");
 const AWS_REGION = config.require("AWS_REGION");
 const ami_id= config.require("ami_id");
 const domainname=config.require("domain");
+const gcp = require("@pulumi/gcp");
+const apiKey = config.require("ApiKey");
+const MAIL_DOMAIN = config.require("maindomain");
+const senderEmailId = "shubhimiradwal2304@gmail.com";
 
 async function createVPC() {
     const vpc = await new aws.ec2.Vpc("main", {
@@ -34,8 +38,6 @@ async function createVPC() {
   }
   
 
-
-
   async function createPublicRouteTable(vpcId, internetGatewayid) {
     const publicRouteTable = await new aws.ec2.RouteTable("public-rt", {
       vpcId: vpcId,
@@ -59,7 +61,6 @@ async function createVPC() {
     });
     return privateRouteTable;
   }
-
 
 
     async function createPublicSubnet(vpcId) {
@@ -142,7 +143,8 @@ async function createVPC() {
                 vpcId: vpcId,
                 ingress: [
                     {
-                        securityGroups: [elbSecurityGroup],
+                    //    securityGroups: [elbSecurityGroup],
+                        cidrBlocks: ["0.0.0.0/0"],
                         protocol: "tcp",
                         fromPort: 22,
                         toPort: 22,
@@ -202,8 +204,8 @@ async function createVPC() {
             });
         }
 
-    async function createUserDataScript(username, dbName, port, hostname, password) {
-            return pulumi.all([username, dbName, port, hostname, password]).apply(([username, dbName, port, hostname, password]) =>
+    async function createUserDataScript(username, dbName, port, hostname, password, topicArn) {
+            return pulumi.all([username, dbName, port, hostname, password, topicArn]).apply(([username, dbName, port, hostname, password, topicArn]) =>
                 `#!/bin/bash          
         
                 cd /home/admin/webapp
@@ -215,8 +217,10 @@ async function createVPC() {
                 echo "NODE_PORT=8080" >> .env
                 echo "DB_HOSTNAME=${hostname}" >> .env
                 echo "DB_PASSWORD=${password}" >> .env
+                echo "SNS_TOPIC_ARN=${topicArn}" >> .env
                 echo "IS_SSL=true" >> .env
                 echo "NODE_ENV=test" >> .env
+
                # npx sequelize db:migrate
                sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
                -a fetch-config \
@@ -249,7 +253,7 @@ async function createRDSInstance(para_grp, subnetgrp, securityGroupdb) {
     });
 }
 
-async function createlbSecurityGroup(vpcId,elbSecurityGroup) {
+async function createlbSecurityGroup(vpcId) {
     return new aws.ec2.SecurityGroup("load Balancer", {
         vpcId: vpcId,
         description: "Allow TCP in for load balancer",
@@ -276,12 +280,14 @@ async function createlbSecurityGroup(vpcId,elbSecurityGroup) {
             },
         ],
 
-
+    
+    });
+}
    
 async function createLaunchTemplate(imageId, userDataScript, publicSubnetId, iamRole, securityGroupId) {
     const userData = pulumi.interpolate`${userDataScript}`.apply(data => Buffer.from(data).toString('base64'));
     const subnetId = Array.isArray(publicSubnetId) ? publicSubnetId[0] : publicSubnetId;
-    return new aws.ec2.LaunchTemplate("asg-launch-template", {
+    return new aws.ec2.LaunchTemplate("csye6225_asg", {
         imageId: imageId,
         instanceType: "t2.micro",
         keyName: "admin-aws",
@@ -325,6 +331,13 @@ async function createAutoScalingGroup(launchTemplateId, publicSubnet, targetgrou
             id: launchTemplateId,
             version: "$Latest",
         },
+        tags: [
+            {
+              key: "Name",
+              value: "autoScalingGroup",
+              propagateAtLaunch: true,
+            },
+          ],
         dependsOn: [targetgroup],
         targetGroupArns: [targetgroup.arn],
 
@@ -369,6 +382,7 @@ const createLoadBalancer = async (publicSubnets, loadBalancerSg) => {
     });
     return alb;
 };
+
 
 async function createARecord(zoneId,alb) {
     return new aws.route53.Record("web-a-record", {
@@ -436,6 +450,125 @@ async function createHighCPUMetricAlarm(asg, scaleUpPolicyArn) {
     });
 }
 
+async function createSNSTopic() {
+    const topic = new aws.sns.Topic("my-topic");
+    return topic.arn;
+
+}
+
+async function createGCSBucket() {
+    const bucket = new gcp.storage.Bucket("my-bucket",{
+        location: "US",
+    });
+    return bucket;
+}
+
+
+async function createServiceAccount() {
+    const account = new gcp.serviceaccount.Account("webappservice", {
+        accountId: "webappservice",
+    });
+    return account;
+}
+
+async function createAccountKey(account) {
+    const accountKey = new gcp.serviceaccount.Key("webappservice", {
+        serviceAccountId: account.name,
+    });
+    return accountKey;
+}
+
+async function createIAMBinding(serviceAccount) {
+    const storageObjectUserRole = "roles/storage.objectCreator";
+    const binding = new gcp.projects.IAMBinding("storageObjectViewer", {
+        project: pulumi.output(gcp.config.project),
+        role: storageObjectUserRole,
+        members: [serviceAccount.email.apply(email => `serviceAccount:${email}`)],
+    });
+
+    return binding;
+}
+
+async function createIamRole() {
+    const lambdaRole = new aws.iam.Role("lambdaRole", {
+        assumeRolePolicy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Action: "sts:AssumeRole",
+                    Principal: {
+                        Service: "lambda.amazonaws.com",
+                    },
+                    Effect: "Allow",
+                    Sid: "",
+                },
+            ],
+        }),
+    });
+
+
+    const lambdaPolicy = new aws.iam.Policy("lambdaPolicy", {
+        description: "Policy for Lambda Function",
+        policy: JSON.stringify({
+            Version: "2012-10-17",
+            Statement: [
+                {
+                    Action: "sns:*",
+                    Effect: "Allow",
+                    Resource: "*",
+                },
+            ],
+        }),
+    });
+     
+    return lambdaRole.arn;
+}
+
+async function createEnvironmentVariables(bucket, accountKey) {
+    return {
+        "GCS_BUCKET": bucket.name,
+        "GCS_CREDS": accountKey.privateKey.apply(encoded => Buffer.from(encoded, 'base64').toString('ascii')),
+        "MAILGUN_API_KEY": apiKey,  
+        "MAILGUN_DOMAIN": MAIL_DOMAIN,
+        "SENDER_EMAIL_ID": senderEmailId,
+        "CLIENT_EMAIL": accountKey.CLIENT_EMAIL,
+    };
+}
+
+async function createLambdaFunction(environmentVariables) {
+    const roleArn = await createIamRole();
+    const lambda = new aws.lambda.Function("lambdaFunction", {
+        runtime: "nodejs18.x",
+        code: new pulumi.asset.AssetArchive({
+            ".": new pulumi.asset.FileArchive("./serverless.zip"),
+        }),
+        timeout: 5,
+        handler: "index.handler",
+        role: roleArn,
+        environment: {
+            variables: environmentVariables,
+        },
+    });
+    return lambda.arn;
+};
+
+async function createSnsLambdaSubscription(lambdaFunctionArn, snsTopicArn) {
+    new aws.sns.TopicSubscription('snsTopicSub', {
+        protocol: 'lambda',
+        endpoint: lambdaFunctionArn,
+        topic: snsTopicArn,
+      });
+}
+
+async function createLambdaPermission(topicArn, functionName) {
+    return new aws.lambda.Permission("withSns", {
+        action: "lambda:InvokeFunction",
+        "function": functionName,
+        principal: "sns.amazonaws.com",
+        sourceArn: topicArn,
+    });
+}
+
 
 
 async function getHostedZone() {
@@ -473,7 +606,9 @@ async function createIamRoleWithPolicy(roleName, policyName) {
 
     const policy = new aws.iam.Policy(policyName, {
         policy: policyDocument,
+        
     });
+
 
     const role = new aws.iam.Role(roleName, {
         assumeRolePolicy: JSON.stringify({
@@ -491,17 +626,44 @@ async function createIamRoleWithPolicy(roleName, policyName) {
         }),
     });
 
+
     const rolePolicyAttachment = new aws.iam.RolePolicyAttachment(`${roleName}-${policyName}`, {
         role: role.name,
-        policyArn: policy.arn,
+        policyArn: policy.arn
     });
+
+    const rolePolicyAttachment1 = new aws.iam.RolePolicyAttachment(`${roleName}`, {
+        role: role.name,
+        policyArn:"arn:aws:iam::aws:policy/AmazonSNSFullAccess"
+    });
+
+    
 
     const instanceProfile = new aws.iam.InstanceProfile(`${roleName}-profile`, {
         role: role.name
     });
-
     return {arn: role.arn, instanceProfileName: instanceProfile.name};
+
+    
+
 }
+
+async function createDynamoDBTable() {
+    const dynamoDB = new aws.dynamodb.Table("dynamodb", {
+        attributes: [
+            {
+                name: "id",
+                type: "S",
+            },
+        ],
+        hashKey: "id",
+        writeCapacity: 20,
+        readCapacity: 20,
+    });
+
+    return dynamoDB;
+}
+
 
 
 const createResource= async()=>
@@ -521,7 +683,8 @@ const createResource= async()=>
     const privateSubnetgroup = await createsubnetgroup(privateSubnet);
     const parameterGroup = await createParameterGroup();
     const rdsinstance= await createRDSInstance(parameterGroup,privateSubnetgroup, dbSecurityGroup);
-    const userDataScript1 = await createUserDataScript(rdsinstance.username,rdsinstance.dbName,rdsinstance.port,rdsinstance.address,rdsinstance.password);
+    const topicArn = await createSNSTopic(); 
+    const userDataScript1 = await createUserDataScript(rdsinstance.username,rdsinstance.dbName,rdsinstance.port,rdsinstance.address,rdsinstance.password, topicArn);
     const {arn, instanceProfileName} = await createIamRoleWithPolicy("webapp-role", "webapp-policy");
     const launchTemplate = await createLaunchTemplate(ami_id, userDataScript1, publicSubnet, instanceProfileName,securityGroup);
     const targetGroup = await createTargetGroup(vpc.id);
@@ -534,9 +697,18 @@ const createResource= async()=>
     const listener = await createListener(alb, targetGroup);
     const hostedZoneid = await getHostedZone();
     const aliass = await createARecord(hostedZoneid.zoneId,alb);
+    const bucket = await createGCSBucket();
+    const serviceAccount = await  createServiceAccount();
+    const iamRole = await createIAMBinding(serviceAccount);
+    const accountKey = await createAccountKey(serviceAccount);
+    const environmentVariables = await createEnvironmentVariables(bucket, accountKey);
+    const lambdaFunctionARN = await createLambdaFunction(environmentVariables);
+    await createSnsLambdaSubscription(lambdaFunctionARN, topicArn);
+    const lambdapermission = await createLambdaPermission(topicArn, lambdaFunctionARN);
+    const dynamoDB=await createDynamoDBTable();
 }
-
 createResource();
+
         
 
- 
+  
