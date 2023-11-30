@@ -12,5 +12,3 @@ config:
   iac-pulumii:vpcCidrBlock: 10.0.0.0/16
   iac-pulumii:ApiKey : "e4d2239e047447bf81d56a30b2a1137b-30b58138-98989044"
   iac-pulumii:maindomain : "shubhimiradwal.me"
-
-  
