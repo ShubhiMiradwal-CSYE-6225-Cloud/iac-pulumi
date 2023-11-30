@@ -1,10 +1,17 @@
-encryptionsalt: v1:bFEfh/kslMQ=:v1:HhT2KauXEjfMN2pF:U6IHhHzheAJRUnnjxFFoGiHcb9fWcw==
+encryptionsalt: v1:vKthbNAfl1k=:v1:luOth2+rMaLKC7Ci:ymSslKdhjxpiRh9OlSbzbakum7ereg==
 config:
-  aws:profile: dev
-  AWS_REGION: us-west-2
-  vpcCidrBlock: "10.0.0.0/16"
-  publicSubnetCidrBase: "10.0."
-  privateSubnetCidrBase: "10.0."
-  destinationCidrBlock: "0.0.0.0/0"
-  subnetCidrOffset: 3
-  ami_id: ami-08716f1e0bdfbc178
+  aws:profile: demo
+  gcp:project: csye-6225-demo
+  iac-pulumii:AWS_REGION: us-west-2
+  iac-pulumii:ami_id: ami-04a6af2c7d867451f
+  iac-pulumii:destinationCidrBlock: 0.0.0.0/0
+  iac-pulumii:domain: demo.shubhimiradwal.me
+  iac-pulumii:privateSubnetCidrBase: 10.0.
+  iac-pulumii:publicSubnetCidrBase: 10.0.
+  iac-pulumii:subnetCidrOffset: "3"
+  iac-pulumii:vpcCidrBlock: 10.0.0.0/16
+  iac-pulumii:ApiKey : "e4d2239e047447bf81d56a30b2a1137b-30b58138-98989044"
+  iac-pulumii:maindomain : "shubhimiradwal.me"
+
+
+  
