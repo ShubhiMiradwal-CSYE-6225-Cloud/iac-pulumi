@@ -14,6 +14,7 @@ const gcp = require("@pulumi/gcp");
 const apiKey = config.require("ApiKey");
 const MAIL_DOMAIN = config.require("maindomain");
 const senderEmailId = "shubhimiradwal2304@gmail.com";
+const certificateArn = config.require("certificatename");
 
 async function createVPC() {
     const vpc = await new aws.ec2.Vpc("main", {
@@ -143,8 +144,8 @@ async function createVPC() {
                 vpcId: vpcId,
                 ingress: [
                     {
-                    //    securityGroups: [elbSecurityGroup],
-                        cidrBlocks: ["0.0.0.0/0"],
+                       securityGroups: [elbSecurityGroup],
+                        // cidrBlocks: ["0.0.0.0/0"],
                         protocol: "tcp",
                         fromPort: 22,
                         toPort: 22,
@@ -288,6 +289,7 @@ async function createLaunchTemplate(imageId, userDataScript, publicSubnetId, iam
     const userData = pulumi.interpolate`${userDataScript}`.apply(data => Buffer.from(data).toString('base64'));
     const subnetId = Array.isArray(publicSubnetId) ? publicSubnetId[0] : publicSubnetId;
     return new aws.ec2.LaunchTemplate("csye6225_asg", {
+        name:"csye6225_asg",
         imageId: imageId,
         instanceType: "t2.micro",
         keyName: "admin-aws",
@@ -322,6 +324,7 @@ async function createLaunchTemplate(imageId, userDataScript, publicSubnetId, iam
 
 async function createAutoScalingGroup(launchTemplateId, publicSubnet, targetgroup) {
     return new aws.autoscaling.Group("webserver-asg", {
+        name: "webserver-asg",
         vpcZoneIdentifiers: publicSubnet,
         desiredCapacity: 1,
         minSize: 1,
@@ -363,8 +366,10 @@ async function createTargetGroup(vpcID) {
 async function createListener(alb, targetGroup) {
     return new aws.lb.Listener("webserver-listener", {
         loadBalancerArn: alb.arn, 
-        port              : 80,
-        protocol          : "HTTP",
+        port              : 443,
+        protocol          : "HTTPS",
+        sslPolicy         : "ELBSecurityPolicy-TLS-1-2-Ext-2018-06",
+        certificateArn    : certificateArn,
         defaultActions: [{
             type: "forward",
             targetGroupArn: targetGroup.arn,
@@ -520,11 +525,15 @@ async function createIamRole() {
             ],
         }),
     });
+    const dynamodbPolicy = new aws.iam.PolicyAttachment("dynamodbPolicy", {
+        roles: [lambdaRole.name],
+        policyArn: "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+    });
      
     return lambdaRole.arn;
 }
 
-async function createEnvironmentVariables(bucket, accountKey) {
+async function createEnvironmentVariables(bucket, accountKey,dynamoDB) {
     return {
         "GCS_BUCKET": bucket.name,
         "GCS_CREDS": accountKey.privateKey.apply(encoded => Buffer.from(encoded, 'base64').toString('ascii')),
@@ -532,6 +541,7 @@ async function createEnvironmentVariables(bucket, accountKey) {
         "MAILGUN_DOMAIN": MAIL_DOMAIN,
         "SENDER_EMAIL_ID": senderEmailId,
         "CLIENT_EMAIL": accountKey.CLIENT_EMAIL,
+        "DYNAMODB_TABLE_NAME": dynamoDB.name,
     };
 }
 
@@ -644,8 +654,6 @@ async function createIamRoleWithPolicy(roleName, policyName) {
     });
     return {arn: role.arn, instanceProfileName: instanceProfile.name};
 
-    
-
 }
 
 async function createDynamoDBTable() {
@@ -653,7 +661,7 @@ async function createDynamoDBTable() {
         attributes: [
             {
                 name: "id",
-                type: "S",
+                type: "N",
             },
         ],
         hashKey: "id",
@@ -701,11 +709,12 @@ const createResource= async()=>
     const serviceAccount = await  createServiceAccount();
     const iamRole = await createIAMBinding(serviceAccount);
     const accountKey = await createAccountKey(serviceAccount);
-    const environmentVariables = await createEnvironmentVariables(bucket, accountKey);
+    const dynamoDB=await createDynamoDBTable();
+    const environmentVariables = await createEnvironmentVariables(bucket, accountKey,dynamoDB);
     const lambdaFunctionARN = await createLambdaFunction(environmentVariables);
     await createSnsLambdaSubscription(lambdaFunctionARN, topicArn);
     const lambdapermission = await createLambdaPermission(topicArn, lambdaFunctionARN);
-    const dynamoDB=await createDynamoDBTable();
+
 }
 createResource();
 
