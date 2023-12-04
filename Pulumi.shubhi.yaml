@@ -3,7 +3,7 @@ config:
   aws:profile: demo
   gcp:project: csye-6225-demo
   iac-pulumii:AWS_REGION: us-west-2
-  iac-pulumii:ami_id: ami-04a6af2c7d867451f
+  iac-pulumii:ami_id: ami-0783e1f34e8c5cc28
   iac-pulumii:destinationCidrBlock: 0.0.0.0/0
   iac-pulumii:domain: demo.shubhimiradwal.me
   iac-pulumii:privateSubnetCidrBase: 10.0.
@@ -12,3 +12,5 @@ config:
   iac-pulumii:vpcCidrBlock: 10.0.0.0/16
   iac-pulumii:ApiKey : "e4d2239e047447bf81d56a30b2a1137b-30b58138-98989044"
   iac-pulumii:maindomain : "shubhimiradwal.me"
+  iac-pulumii:certificatename : "arn:aws:acm:us-west-2:553820382563:certificate/5fcb6404-7d21-4b6a-8d9f-eec2ce72ce8a"
+
