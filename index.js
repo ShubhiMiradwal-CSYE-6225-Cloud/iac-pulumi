@@ -16,7 +16,6 @@ const MAIL_DOMAIN = config.require("maindomain");
 const senderEmailId = "shubhimiradwal2304@gmail.com";
 const certificateArn = config.require("certificatename");
 
-
 async function createVPC() {
     const vpc = await new aws.ec2.Vpc("main", {
       cidrBlock: vpcCidrBlockk,
@@ -526,16 +525,13 @@ async function createIamRole() {
             ],
         }),
     });
-
     const dynamodbPolicy = new aws.iam.PolicyAttachment("dynamodbPolicy", {
         roles: [lambdaRole.name],
         policyArn: "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
     });
-
      
     return lambdaRole.arn;
 }
-
 
 async function createEnvironmentVariables(bucket, accountKey,dynamoDB) {
     return {
@@ -546,7 +542,6 @@ async function createEnvironmentVariables(bucket, accountKey,dynamoDB) {
         "SENDER_EMAIL_ID": senderEmailId,
         "CLIENT_EMAIL": accountKey.CLIENT_EMAIL,
         "DYNAMODB_TABLE_NAME": dynamoDB.name,
-
     };
 }
 
@@ -659,7 +654,6 @@ async function createIamRoleWithPolicy(roleName, policyName) {
     });
     return {arn: role.arn, instanceProfileName: instanceProfile.name};
 
-
 }
 
 async function createDynamoDBTable() {
@@ -677,6 +671,7 @@ async function createDynamoDBTable() {
 
     return dynamoDB;
 }
+
 
 
 const createResource= async()=>
